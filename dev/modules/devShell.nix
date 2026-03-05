@@ -1,4 +1,5 @@
 # Development shell configuration
+# This module is loaded only in the dev partition
 { inputs, ... }:
 {
   perSystem =

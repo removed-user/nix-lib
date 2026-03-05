@@ -32,13 +32,91 @@ This gives you:
 
 ## Quick Start
 
+### Using `mkFlake` (Recommended)
+
+`nlib.mkFlake` is the main entry point. It evaluates lib modules and optionally integrates with flake-parts:
+
 ```nix
 {
-  inputs.nix-lib.url = "github:Dauliac/nix-lib";
+  inputs = {
+    nixpkgs.url = "github:nixos/nixpkgs/nixpkgs-unstable";
+    flake-parts.url = "github:hercules-ci/flake-parts";
+    nlib.url = "github:Dauliac/nlib";
+  };
 
-  outputs = { nix-lib, ... }:
-    nix-lib.inputs.flake-parts.lib.mkFlake { inherit inputs; } {
-      imports = [ nix-lib.flakeModules.default ];
+  outputs = inputs:
+    inputs.nlib.mkFlake {
+      inherit inputs;
+      modules = [ ./libs/math.nix ];
+      flake-parts = inputs.flake-parts;  # Optional: enables flake-parts integration
+    } {
+      systems = [ "x86_64-linux" "aarch64-linux" ];
+
+      perSystem = { lib, pkgs, ... }: {
+        # lib.math.* available in OPTIONS phase!
+        packages.default = pkgs.writeText "result"
+          "double 5 = ${toString (lib.math.double 5)}";
+      };
+    };
+}
+```
+
+#### Lib Module Format
+
+```nix
+# libs/math.nix
+{ lib, config, ... }: {
+  lib.math.double = {
+    fn = x: x * 2;
+    description = "Double a number";
+    tests."doubles 5" = { args.x = 5; expected = 10; };
+  };
+
+  # Self-referencing via config
+  lib.math.quadruple = {
+    fn = x: config.lib.math.double.fn (config.lib.math.double.fn x);
+    description = "Quadruple using double";
+  };
+}
+```
+
+#### Standalone Mode (no flake-parts)
+
+```nix
+{
+  outputs = inputs:
+    inputs.nlib.mkFlake {
+      inherit inputs;
+      modules = [ ./libs/math.nix ];
+    } {
+      packages.x86_64-linux.default = ...;
+    };
+}
+```
+
+#### Importing External Libs
+
+```nix
+inputs.nlib.mkFlake {
+  inherit inputs;
+  modules = [
+    ./libs/math.nix           # Your lib modules
+    { inherit soonix; }       # External: soonix.lib -> lib.soonix.*
+    { custom = otherLib; }    # Renamed: otherLib.lib -> lib.custom.*
+  ];
+  flake-parts = inputs.flake-parts;
+} { ... }
+```
+
+### Using flake-parts Module (Alternative)
+
+```nix
+{
+  inputs.nlib.url = "github:Dauliac/nlib";
+
+  outputs = { nlib, ... }:
+    nlib.inputs.flake-parts.lib.mkFlake { inherit inputs; } {
+      imports = [ nlib.flakeModules.default ];
 
       # Define a pure flake-level lib
       nix-lib.lib.double = {
@@ -51,7 +129,83 @@ This gives you:
 }
 ```
 
-See `examples/` for complete working examples of each module system.
+See `examples/` and `tests/scenarios/` for complete working examples.
+
+## Lib Modules Architecture
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  nlib.mkFlake                                            │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │  1. Evaluate lib modules (BEFORE flake-parts)      │  │
+│  │     → produces lib.*                               │  │
+│  └──────────────────────┬─────────────────────────────┘  │
+│                         │ inject into lib                │
+│                         ▼                                │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │  2. flake-parts.lib.mkFlake (if provided)          │  │
+│  │     specialArgs.lib = nixpkgs.lib // evaluatedLibs │  │
+│  │     → lib.* available in OPTIONS phase!            │  │
+│  └──────────────────────┬─────────────────────────────┘  │
+│                         │                                │
+│                         ▼                                │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │  3. NixOS/home-manager adapters                    │  │
+│  │     → config.lib.*                                 │  │
+│  └────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────┘
+```
+
+### mkFlake Options
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `inputs` | attrset | Flake inputs (required) |
+| `modules` | list | Lib modules to evaluate |
+| `flake-parts` | input | Optional: flake-parts input for integration |
+
+### Lib Module Format
+
+Lib modules are NixOS-style modules that define `lib.*`:
+
+```nix
+{ lib, config, ... }: {
+  lib.<namespace>.<name> = {
+    fn = ...;           # Required: the function
+    description = "..."; # Optional: documentation
+    tests = { ... };    # Optional: test cases
+    type = ...;         # Optional: type signature
+    visible = true;     # Optional: public/private
+  };
+}
+```
+
+## Importing External Libs (soonix-style)
+
+For libs that follow the soonix pattern (`input.lib = { pkgs }: { ... }`), use `nix-lib.imports` in perSystem:
+
+```nix
+perSystem = { pkgs, config, ... }: {
+  nix-lib.imports = [
+    { inherit soonix; }       # soonix.lib { inherit pkgs; } -> config.lib.soonix.*
+    { inherit anotherLib; }   # -> config.lib.anotherLib.*
+    { custom = someLib; }     # -> config.lib.custom.*
+  ];
+
+  # Now available:
+  devShells.default = pkgs.mkShell {
+    shellHook = config.lib.soonix.mkShellHook { ... };
+  };
+};
+```
+
+For pure libs (no pkgs needed), use `nix-lib.imports` at flake level:
+
+```nix
+nix-lib.imports = [
+  { inherit pureLib; }      # pureLib.lib.* -> flake.lib.pureLib.*
+];
+```
 
 ## API Reference
 
@@ -560,5 +714,7 @@ For BDD-style structure tests, create modules in `tests/bdd/`:
 ## See Also
 
 - `examples/` - Working examples for each module system
-- `tests/` - Test flake with BDD tests
+- `tests/scenarios/mkFlake-standalone/` - mkFlake standalone example
+- `tests/scenarios/mkFlake-flake-parts/` - mkFlake with flake-parts example
+- `tests/bdd/` - BDD tests for structure validation
 - `CONTRIBUTING.md` - Development and testing guide

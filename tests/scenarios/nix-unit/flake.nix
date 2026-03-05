@@ -12,17 +12,14 @@
     nixvim.url = "github:nix-community/nixvim";
     nix-darwin.url = "github:LnL7/nix-darwin";
     system-manager.url = "github:numtide/system-manager";
-    devour-flake = {
-      url = "github:srid/devour-flake";
-      flake = false;
-    };
+    nix-unit.url = "github:nix-community/nix-unit";
   };
 
   outputs =
     inputs:
     let
       nix-lib = inputs.get-flake ../../..;
-      inherit (nix-lib.inputs) nix-unit;
+      inherit (inputs) nix-unit;
     in
     nix-lib.inputs.flake-parts.lib.mkFlake
       {
@@ -60,9 +57,6 @@
               lib,
               ...
             }:
-            let
-              devour-flake = pkgs.callPackage inputs.devour-flake { };
-            in
             {
               nix-unit.inputs = inputs // {
                 inherit nix-lib;
@@ -78,16 +72,12 @@
                     name = "test";
                     runtimeInputs = [
                       nix-unit.packages.${system}.default
-                      devour-flake
                     ];
                     text = ''
                       echo "=== nix-unit test scenario ==="
                       echo ""
                       echo "=== Running nix-unit tests ==="
                       nix-unit --flake .#tests
-                      echo ""
-                      echo "=== Building all flake outputs with devour-flake ==="
-                      devour-flake ../../..
                       echo ""
                       echo "=== All nix-unit tests passed! ==="
                     '';
@@ -98,7 +88,6 @@
               devShells.default = pkgs.mkShell {
                 packages = [
                   nix-unit.packages.${system}.default
-                  devour-flake
                 ];
                 shellHook = ''
                   echo "nix-unit test scenario"

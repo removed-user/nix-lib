@@ -1,4 +1,5 @@
 # nix-unit integration
+# This module is loaded only in the dev partition
 #
 # Imports the nix-unit flake-parts module and configures it to work with nix-lib's test system.
 # Tests defined via nix-lib.lib.*.tests are automatically converted and run by nix-unit.

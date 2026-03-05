@@ -1,4 +1,5 @@
 # treefmt configuration for code formatting and linting
+# This module is loaded only in the dev partition
 { inputs, ... }:
 {
   imports = [

@@ -1,4 +1,7 @@
 # nix-lib flake outputs (flakeModules, nixosModules, lib.nix-lib.mkAdapter)
+#
+# Note: mkStandaloneLib is exported via lib.nix-lib.mkStandaloneLib
+# (defined in lib/flake.nix which exports nixLibLib as lib.nix-lib)
 { inputs, ... }:
 let
   nixLibLib = import ./nix-lib/_lib { inherit (inputs.nixpkgs) lib; };

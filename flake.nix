@@ -3,7 +3,23 @@
 {
   description = "nix-lib - Nix library module with tested, typed, documented functions";
 
-  outputs = inputs: inputs.flake-parts.lib.mkFlake { inherit inputs; } (inputs.import-tree ./modules);
+  outputs =
+    inputs:
+    let
+      lib = inputs.nixpkgs.lib;
+      nlibLib = import ./modules/nix-lib/_lib { inherit lib; };
+    in
+    inputs.flake-parts.lib.mkFlake { inherit inputs; } (inputs.import-tree ./modules)
+    // {
+      inherit (nlibLib)
+        mkFlake
+        evalLibModules
+        mkSpecialArgsLib
+        mkLib
+        mkAdapter
+        withLib
+        ;
+    };
 
   inputs = {
     devour-flake = {
