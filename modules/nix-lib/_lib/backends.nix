@@ -34,14 +34,28 @@ let
   # Sanitize test name for use as identifier
   sanitize = s: replaceStrings [ " " ":" "-" "'" "\"" ] [ "_" "_" "_" "_" "_" ] s;
 
-  # Apply function to args (handles both curried and attrset args)
+  # Apply function to args (handles both curried and set-pattern args)
+  # Detects function signature using builtins.functionArgs:
+  # - If function expects named args ({ a, b }: ...), pass args as single set
+  # - If function is curried (a: b: ...), apply args one-by-one
   applyFn =
     fn: args:
     if builtins.isAttrs args then
       let
-        argNames = builtins.attrNames args;
+        fnArgs = builtins.functionArgs fn;
+        # If functionArgs returns non-empty set, fn uses set pattern ({ a, b }: ...)
+        # If empty, fn is either curried or takes no args
+        usesSetPattern = fnArgs != { };
       in
-      builtins.foldl' (f: name: f args.${name}) fn argNames
+      if usesSetPattern then
+        # Function expects a single set argument - pass args directly
+        fn args
+      else
+        # Function is curried - apply args one-by-one
+        let
+          argNames = builtins.attrNames args;
+        in
+        builtins.foldl' (f: name: f args.${name}) fn argNames
     else
       fn args;
 

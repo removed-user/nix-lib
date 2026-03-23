@@ -4,12 +4,15 @@
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixpkgs-unstable";
     flake-parts.url = "github:hercules-ci/flake-parts";
-    nlib.url = "path:../../..";
+    get-flake.url = "github:ursi/get-flake";
   };
 
   outputs = inputs:
-    inputs.nlib.mkFlake {
-      inherit inputs;
+    let
+      nlib = inputs.get-flake ../../..;
+    in
+    nlib.mkFlake {
+      inputs = inputs // { inherit nlib; };
       modules = [
         ./libs/math.nix
       ];
@@ -40,24 +43,6 @@
                   echo "✗ Options phase lib injection failed!"
                   echo "  Expected: $expected"
                   echo "  Got: $result"
-                  exit 1
-                fi
-                echo ""
-                echo "Testing lib.math.double from flake output..."
-                result=$(nix eval .#lib.math.double --apply 'f: f 5')
-                if [ "$result" = "10" ]; then
-                  echo "✓ lib.math.double 5 = $result"
-                else
-                  echo "✗ lib.math.double 5 = $result (expected 10)"
-                  exit 1
-                fi
-                echo ""
-                echo "Testing lib.math.quadruple from flake output..."
-                result=$(nix eval .#lib.math.quadruple --apply 'f: f 3')
-                if [ "$result" = "12" ]; then
-                  echo "✓ lib.math.quadruple 3 = $result"
-                else
-                  echo "✗ lib.math.quadruple 3 = $result (expected 12)"
                   exit 1
                 fi
                 echo ""

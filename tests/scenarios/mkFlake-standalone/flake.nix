@@ -3,22 +3,27 @@
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixpkgs-unstable";
-    nlib.url = "path:../../..";
+    get-flake.url = "github:ursi/get-flake";
   };
 
   outputs = inputs:
     let
+      nlib = inputs.get-flake ../../..;
       system = "x86_64-linux";
       pkgs = inputs.nixpkgs.legacyPackages.${system};
 
-      flakeOutputs = inputs.nlib.mkFlake {
-        inherit inputs;
+      flakeOutputs = nlib.mkFlake {
+        inputs = inputs // { inherit nlib; };
         modules = [
           ./libs/math.nix
         ];
       } {
         packages.${system}.default = pkgs.writeText "test" "double 5 = 10";
       };
+
+      # Verify lib functions work at eval time
+      doubleResult = flakeOutputs.lib.math.double 5;
+      tripleResult = flakeOutputs.lib.math.triple 3;
     in
     let
       testApp = {
@@ -29,7 +34,7 @@
             echo "=== mkFlake standalone test ==="
             echo ""
             echo "Testing lib.math.double..."
-            result=$(nix eval .#lib.math.double --apply 'f: f 5')
+            result="${toString doubleResult}"
             if [ "$result" = "10" ]; then
               echo "✓ lib.math.double 5 = $result"
             else
@@ -38,7 +43,7 @@
             fi
             echo ""
             echo "Testing lib.math.triple..."
-            result=$(nix eval .#lib.math.triple --apply 'f: f 3')
+            result="${toString tripleResult}"
             if [ "$result" = "9" ]; then
               echo "✓ lib.math.triple 3 = $result"
             else

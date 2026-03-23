@@ -10,10 +10,11 @@
   inputs = {
     get-flake.url = "github:ursi/get-flake";
     nixpkgs.url = "github:nixos/nixpkgs/nixpkgs-unstable";
+    nix-unit.url = "github:nix-community/nix-unit";
   };
 
   outputs =
-    { self, get-flake, nixpkgs, ... }:
+    { self, get-flake, nixpkgs, nix-unit, ... }:
     let
       nlib = get-flake ../../..;
       system = "x86_64-linux";
@@ -178,51 +179,56 @@
       };
 
       # Test runner app
-      apps.${system}.test = {
-        type = "app";
-        program =
-          pkgs.writeShellApplication {
-            name = "test";
-            runtimeInputs = [ nlib.inputs.nix-unit.packages.${system}.default ];
-            text = ''
-              echo "=== Standalone API test scenario ==="
-              echo ""
-              echo "Testing mkStandaloneLib for non-flake-parts flakes"
-              echo ""
+      apps.${system} =
+        let
+          testApp = {
+            type = "app";
+            program =
+              pkgs.writeShellApplication {
+                name = "test";
+                runtimeInputs = [ nix-unit.packages.${system}.default ];
+                text = ''
+                  echo "=== Standalone API test scenario ==="
+                  echo ""
+                  echo "Testing mkStandaloneLib for non-flake-parts flakes"
+                  echo ""
 
-              echo "=== Verifying lib structure ==="
-              echo "lib.basic.double exists: $(nix eval .#lib.basic.double --apply 'f: if f != null then "yes" else "no"')"
-              echo "lib.basic.quadruple exists: $(nix eval .#lib.basic.quadruple --apply 'f: if f != null then "yes" else "no"')"
-              echo "lib.basic.math.add exists: $(nix eval .#lib.basic.math.add --apply 'f: if f != null then "yes" else "no"')"
-              echo "lib.basic.math.doubleSum exists: $(nix eval .#lib.basic.math.doubleSum --apply 'f: if f != null then "yes" else "no"')"
-              echo ""
+                  echo "=== Verifying lib structure ==="
+                  echo "lib.basic.double exists: $(nix eval .#lib.basic.double --apply 'f: if f != null then "yes" else "no"')"
+                  echo "lib.basic.quadruple exists: $(nix eval .#lib.basic.quadruple --apply 'f: if f != null then "yes" else "no"')"
+                  echo "lib.basic.math.add exists: $(nix eval .#lib.basic.math.add --apply 'f: if f != null then "yes" else "no"')"
+                  echo "lib.basic.math.doubleSum exists: $(nix eval .#lib.basic.math.doubleSum --apply 'f: if f != null then "yes" else "no"')"
+                  echo ""
 
-              echo "=== Verifying self-reference works ==="
-              echo "double 5 = $(nix eval .#lib.basic.double --apply 'f: f 5')"
-              echo "quadruple 3 = $(nix eval .#lib.basic.quadruple --apply 'f: f 3')"
-              echo "math.doubleSum {a=2;b=3} = $(nix eval .#lib.basic.math.doubleSum --apply 'f: f {a=2;b=3;}')"
-              echo ""
+                  echo "=== Verifying self-reference works ==="
+                  echo "double 5 = $(nix eval .#lib.basic.double --apply 'f: f 5')"
+                  echo "quadruple 3 = $(nix eval .#lib.basic.quadruple --apply 'f: f 3')"
+                  echo "math.doubleSum {a=2;b=3} = $(nix eval .#lib.basic.math.doubleSum --apply 'f: f {a=2;b=3;}')"
+                  echo ""
 
-              echo "=== Verifying visibility (private helpers) ==="
-              echo "_helper should NOT be in lib.visibility:"
-              nix eval .#lib.visibility --apply 'builtins.attrNames' || true
-              echo ""
+                  echo "=== Verifying visibility (private helpers) ==="
+                  echo "_helper should NOT be in lib.visibility:"
+                  nix eval .#lib.visibility --apply 'builtins.attrNames' || true
+                  echo ""
 
-              echo "=== Running nix-unit tests ==="
-              nix-unit --flake .#tests
-              echo ""
+                  echo "=== Running nix-unit tests ==="
+                  nix-unit --flake .#tests
+                  echo ""
 
-              echo "=== All standalone API tests passed! ==="
-            '';
-          }
-          + "/bin/test";
-      };
-
-      apps.${system}.default = self.apps.${system}.test;
+                  echo "=== All standalone API tests passed! ==="
+                '';
+              }
+              + "/bin/test";
+          };
+        in
+        {
+          test = testApp;
+          default = testApp;
+        };
 
       # Dev shell for debugging
       devShells.${system}.default = pkgs.mkShell {
-        packages = [ nlib.inputs.nix-unit.packages.${system}.default ];
+        packages = [ nix-unit.packages.${system}.default ];
         shellHook = ''
           echo "Standalone API test scenario"
           echo "Run tests: nix run .#test"
