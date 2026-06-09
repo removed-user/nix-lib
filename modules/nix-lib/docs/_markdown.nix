@@ -37,6 +37,39 @@ let
     else
       toString v;
 
+  # Extract function arguments for documentation
+  # Returns a string like "{ a, b, c ? default }" or null if not detectable
+  fnArgsToString =
+    meta:
+    let
+      fn = meta.fn or null;
+      fnArgs = if fn != null && builtins.isFunction fn then builtins.functionArgs fn else { };
+      hasSetPattern = fnArgs != { };
+      argNames = builtins.attrNames fnArgs;
+      argEntries = map (
+        name:
+        if fnArgs.${name} then "${name} ? ..." else name
+      ) argNames;
+    in
+    if hasSetPattern then
+      "{ ${lib.concatStringsSep ", " argEntries} }"
+    else
+      # For curried functions, try to infer arg names from test args
+      let
+        tests = meta.tests or { };
+        testNames = builtins.attrNames tests;
+        firstTest = if testNames != [ ] then tests.${builtins.head testNames} else null;
+        testArgNames =
+          if firstTest != null && firstTest ? args && builtins.isAttrs firstTest.args then
+            builtins.attrNames firstTest.args
+          else
+            [ ];
+      in
+      if testArgNames != [ ] then
+        lib.concatStringsSep " → " testArgNames
+      else
+        null;
+
   # Generate index entry for a single lib
   libToIndexEntry =
     name: meta:
@@ -78,13 +111,28 @@ let
         </details>
       '';
 
-  # Generate markdown for a single lib
+  # Generate markdown for a single lib (heading level is provided externally)
   libToMarkdown =
-    name: meta:
+    headingLevel: name: meta:
     let
       anchor = nameToAnchor name;
+      # Use the last segment as the display name (short name)
+      parts = lib.splitString "." name;
+      shortName = lib.last parts;
+      heading = lib.concatStrings (lib.replicate headingLevel "#");
       visibleStr = if meta.visible or true then "" else " *(private)*";
       descStr = meta.description or "No description";
+      argsStr =
+        let
+          rendered = fnArgsToString meta;
+        in
+        if rendered != null then
+          ''
+
+            **Arguments:** `${rendered}`
+          ''
+        else
+          "";
       typeStr =
         let
           rendered = typeToString (meta.type or null);
@@ -118,11 +166,78 @@ let
       testStr = testsToMarkdown (meta.tests or { });
     in
     ''
-      ### `${name}` {#${anchor}}${visibleStr}
-      ${typeStr}
+      ${heading} `${shortName}` {#${anchor}}${visibleStr}
+      ${argsStr}${typeStr}
       ${descStr}
       ${fileStr}${exampleStr}${testStr}
     '';
+
+  # Build a namespace tree from sorted lib names
+  # Returns a nested attrset where leaves have __libs = [ { name, meta } ]
+  # and branches have sub-namespaces as attrs
+  buildNamespaceTree =
+    cleanMeta: allSortedLibNames:
+    builtins.foldl' (
+      tree: name:
+      let
+        parts = lib.splitString "." name;
+        # All parts except the last are namespace segments
+        nsParts = lib.init parts;
+        # Build path in tree for this namespace
+        insertLib =
+          currentTree: remainingParts:
+          if remainingParts == [ ] then
+            # We're at the target namespace - add the lib
+            currentTree
+            // {
+              __libs = (currentTree.__libs or [ ]) ++ [
+                {
+                  inherit name;
+                  meta = cleanMeta.${name};
+                }
+              ];
+            }
+          else
+            let
+              segment = builtins.head remainingParts;
+              rest = builtins.tail remainingParts;
+              existing = currentTree.${segment} or { };
+            in
+            currentTree // { ${segment} = insertLib existing rest; };
+      in
+      insertLib tree nsParts
+    ) { } allSortedLibNames;
+
+  # Render a namespace tree to markdown with hierarchical headings
+  # libLevel: the heading level for libs at this depth (3 = ###, 4 = ####, etc.)
+  renderNamespaceTree =
+    tree: libLevel:
+    let
+      # Render libs at this level
+      libsHere = tree.__libs or [ ];
+      libDocs = lib.concatMapStrings (
+        entry: libToMarkdown libLevel entry.name entry.meta
+      ) libsHere;
+
+      # Render sub-namespaces
+      subKeys = builtins.sort (a: b: a < b) (
+        builtins.filter (k: k != "__libs") (builtins.attrNames tree)
+      );
+      # Sub-namespace heading is at the same level as libs
+      nsHeading = lib.concatStrings (lib.replicate libLevel "#");
+      subDocs = lib.concatMapStrings (
+        key:
+        let
+          subTree = tree.${key};
+        in
+        ''
+          ${nsHeading} ${key}
+
+          ${renderNamespaceTree subTree (libLevel + 1)}
+        ''
+      ) subKeys;
+    in
+    "${libDocs}${subDocs}";
 
   # Generate full markdown document
   generateMarkdown =
@@ -136,8 +251,12 @@ let
       indexEntries = lib.concatMapStringsSep "\n" (
         name: libToIndexEntry name cleanMeta.${name}
       ) allSortedLibNames;
-      libDocs = lib.concatMapStrings (name: libToMarkdown name cleanMeta.${name}) allSortedLibNames;
       libCount = builtins.length allSortedLibNames;
+
+      # Build namespace tree and render with hierarchical headings
+      # Root libs start at heading level 3 (###), namespace headings at same level
+      nsTree = buildNamespaceTree cleanMeta allSortedLibNames;
+      libDocs = renderNamespaceTree nsTree 3;
 
       titleBlock =
         if showTitle then
@@ -177,5 +296,8 @@ in
     typeToString
     valueToNix
     testsToMarkdown
+    fnArgsToString
+    buildNamespaceTree
+    renderNamespaceTree
     ;
 }
