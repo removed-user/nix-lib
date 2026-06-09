@@ -9,16 +9,25 @@ let
   inherit (libDefTypeModule) flattenLibs libDefsToMeta;
   markdown = import ./_markdown.nix { inherit lib; };
 
-  # Get flake-level lib metadata
-  flakeLibsMeta = config.nix-lib._flakeLibsMeta or { };
+  # Get flake-level lib metadata, prefixed with "flake."
+  rawFlakeLibsMeta = config.nix-lib._flakeLibsMeta or { };
+  flakeLibsMeta = lib.mapAttrs' (
+    name: value: { name = "flake.${name}"; inherit value; }
+  ) rawFlakeLibsMeta;
 
-  # Get collected metadata from all module systems
+  # Get collected metadata from all module systems (keyed by namespace)
   collectedMeta = lib.mapAttrs (_: collector: collector config) (
     config.nix-lib.metaCollectors or { }
   );
 
-  # Flatten all collected metadata
-  allCollectedMeta = lib.foldl' (acc: meta: acc // meta) { } (lib.attrValues collectedMeta);
+  # Prefix each collected lib with its namespace: nixos.mkService, home.mkShell, etc.
+  allCollectedMeta = lib.foldl' (
+    acc: ns:
+    let
+      meta = collectedMeta.${ns};
+    in
+    acc // (lib.mapAttrs' (name: value: { name = "${ns}.${name}"; inherit value; }) meta)
+  ) { } (lib.attrNames collectedMeta);
 
   # All flake-level metadata (flake libs + collected from nixos/home/etc)
   allFlakeMeta = flakeLibsMeta // allCollectedMeta;
