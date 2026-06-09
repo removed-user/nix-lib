@@ -30,12 +30,19 @@ in
       ...
     }:
     let
+      cfg = config.nix-lib.docs;
+
       # Get per-system lib metadata
       perSystemLibDefs = flattenLibs "" (config.nix-lib.lib or { });
       perSystemLibsMeta = libDefsToMeta perSystemLibDefs (config.lib or { });
 
       # Merge flake metadata (from closure) with per-system metadata
-      allLibsMeta = allFlakeMeta // perSystemLibsMeta;
+      allLibsMeta = allFlakeMeta // perSystemLibsMeta // {
+        __docsOptions = {
+          showIndex = cfg.showIndex;
+          showTitle = cfg.showTitle;
+        };
+      };
 
       # Create the derivation
       docsDerivation = pkgs.writeTextFile {
@@ -45,14 +52,28 @@ in
       };
     in
     {
-      options.nix-lib.docs.package = lib.mkOption {
-        type = lib.types.package;
-        default = docsDerivation;
-        description = ''
-          Markdown documentation package for all defined libs.
+      options.nix-lib.docs = {
+        package = lib.mkOption {
+          type = lib.types.package;
+          default = docsDerivation;
+          description = ''
+            Markdown documentation package for all defined libs.
 
-          The output contains a `docs.md` file with all lib definitions.
-        '';
+            The output contains a `docs.md` file with all lib definitions.
+          '';
+        };
+
+        showIndex = lib.mkOption {
+          type = lib.types.bool;
+          default = true;
+          description = "Whether to include the function index in generated docs.";
+        };
+
+        showTitle = lib.mkOption {
+          type = lib.types.bool;
+          default = true;
+          description = "Whether to include the top-level title and lib count in generated docs.";
+        };
       };
     };
 }
