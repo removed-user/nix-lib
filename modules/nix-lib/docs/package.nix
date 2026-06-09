@@ -60,6 +60,16 @@ in
         let
           opts = meta.__docsOptions or { };
           cleanMeta = builtins.removeAttrs meta [ "__docsOptions" ];
+          # Strip functions from test assertions for JSON serialization
+          cleanTests =
+            tests:
+            lib.mapAttrs (
+              _: t:
+              builtins.removeAttrs t [ "check" ]
+              // {
+                assertions = map (a: builtins.removeAttrs a [ "check" ]) (t.assertions or [ ]);
+              }
+            ) tests;
           serializable = lib.mapAttrs (
             _: m:
             builtins.removeAttrs m [ "fn" ]
@@ -76,6 +86,7 @@ in
                   t.description
                 else
                   builtins.toString t;
+              tests = cleanTests (m.tests or { });
             }
           ) cleanMeta;
         in
