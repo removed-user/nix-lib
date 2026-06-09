@@ -165,7 +165,7 @@ def args_to_string(meta, fn_body):
     if tests:
         first_test = next(iter(tests.values()))
         args = first_test.get("args", {})
-        if args:
+        if args and isinstance(args, dict):
             arg_names = list(args.keys())
             if len(arg_names) == 1 and not isinstance(args[arg_names[0]], dict):
                 return " -> ".join(arg_names)
