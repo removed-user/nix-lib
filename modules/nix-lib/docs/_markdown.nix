@@ -69,11 +69,13 @@ let
       in
       ''
 
-        **Tests:**
+        <details><summary><strong>Tests (${toString (builtins.length testNames)})</strong></summary>
 
         | Name | Input | Expected |
         |---|---|---|
         ${lib.concatStringsSep "\n" rows}
+
+        </details>
       '';
 
   # Generate markdown for a single lib
