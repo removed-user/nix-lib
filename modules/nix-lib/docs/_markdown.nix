@@ -19,6 +19,24 @@ let
     else
       builtins.toString type;
 
+  # Pretty-print a Nix value for documentation
+  valueToNix =
+    v:
+    if builtins.isString v then
+      ''"${v}"''
+    else if builtins.isInt v then
+      toString v
+    else if builtins.isBool v then
+      if v then "true" else "false"
+    else if builtins.isNull v then
+      "null"
+    else if builtins.isList v then
+      "[ ${lib.concatMapStringsSep " " valueToNix v} ]"
+    else if builtins.isAttrs v then
+      "{ ${lib.concatStringsSep " " (lib.mapAttrsToList (k: val: "${k} = ${valueToNix val};") v)} }"
+    else
+      toString v;
+
   # Generate index entry for a single lib
   libToIndexEntry =
     name: meta:
@@ -27,6 +45,36 @@ let
       fileLink = if meta.file or null != null then " ([source](${meta.file}))" else "";
     in
     "- [`${name}`](#${anchor})${fileLink}";
+
+  # Render test cases as a markdown table
+  testsToMarkdown =
+    tests:
+    let
+      testNames = builtins.attrNames tests;
+    in
+    if testNames == [ ] then
+      ""
+    else
+      let
+        rows = map (
+          testName:
+          let
+            t = tests.${testName};
+            argsStr = valueToNix (t.args or { });
+            expectedStr =
+              if t.expected or null != null then valueToNix t.expected else "*(assertions)*";
+          in
+          "| ${testName} | `${argsStr}` | `${expectedStr}` |"
+        ) testNames;
+      in
+      ''
+
+        **Tests:**
+
+        | Name | Input | Expected |
+        |---|---|---|
+        ${lib.concatStringsSep "\n" rows}
+      '';
 
   # Generate markdown for a single lib
   libToMarkdown =
@@ -46,8 +94,6 @@ let
           ''
         else
           "";
-      testCount = builtins.length (builtins.attrNames (meta.tests or { }));
-      testsStr = if testCount > 0 then " (${toString testCount} tests)" else "";
       fileStr =
         if meta.file or null != null then
           ''
@@ -67,12 +113,13 @@ let
           ''
         else
           "";
+      testStr = testsToMarkdown (meta.tests or { });
     in
     ''
       ### `${name}` {#${anchor}}${visibleStr}
       ${typeStr}
-      ${descStr}${testsStr}
-      ${fileStr}${exampleStr}
+      ${descStr}
+      ${fileStr}${exampleStr}${testStr}
     '';
 
   # Generate full markdown document
@@ -126,5 +173,7 @@ in
     libToMarkdown
     generateMarkdown
     typeToString
+    valueToNix
+    testsToMarkdown
     ;
 }
